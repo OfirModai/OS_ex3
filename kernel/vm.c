@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -437,3 +438,38 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+uint64
+map_shared_pages(struct proc* src_proc,
+                 struct proc* dst_proc,
+                 uint64 src_va, uint64 size) 
+{
+
+  // finding the pte of src_va in src_proc
+  pte_t *pte = walk(src_proc->pagetable, src_va, 0);
+  if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0) {
+    return 0; // no valid mapping found
+  }
+  
+  uint64 perm_bits = PTE_FLAGS(*pte) | PTE_S; // add the not owned bit PTE_S
+  uint64 pa = PTE2PA(*pte); // physical address of the page
+  uint64 oldsz = PGROUNDUP(dst_proc->sz);
+
+  // iterate for PGSIZE to map the size in PA, to pagetable of dst, like in uvmalloc
+  for(uint64 a = oldsz; a < oldsz + size; a += PGSIZE) {
+    if(mappages(dst_proc->pagetable, a, PGSIZE, pa, perm_bits) != 0) {
+      unmap_shared_pages(dst_proc, a, oldsz);
+      return 0;
+    }
+    pa += PGSIZE;
+  }
+  return oldsz; //I think we need to return the va where the shared memory is starting, but I am not sure
+}
+
+uint64
+unmap_shared_pages(struct proc* p, 
+                   uint64 addr, 
+                   uint64 size)
+{
+  return 0;
+}                   
