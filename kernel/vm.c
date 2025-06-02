@@ -184,7 +184,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
-    if(do_free){
+    
+    // adding PTE_S to the PTE means that the page is not owned by the process, so we don't free it.
+    if(do_free && (*pte & PTE_S) == 0){
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
@@ -444,6 +446,9 @@ map_shared_pages(struct proc* src_proc,
                  struct proc* dst_proc,
                  uint64 src_va, uint64 size) 
 {
+  // lock fields of src_proc and dst_proc
+  acquire(&src_proc->lock);
+  acquire(&dst_proc->lock);
 
   // finding the pte of src_va in src_proc
   pte_t *pte = walk(src_proc->pagetable, src_va, 0);
@@ -463,13 +468,28 @@ map_shared_pages(struct proc* src_proc,
     }
     pa += PGSIZE;
   }
+  dst_proc->sz = oldsz + size;
+  releases(&dst_proc->lock);
+  releases(&src_proc->lock);
   return oldsz; //I think we need to return the va where the shared memory is starting, but I am not sure
 }
 
 uint64
 unmap_shared_pages(struct proc* p, 
-                   uint64 addr, 
+                   uint64 addr,
                    uint64 size)
 {
+  acquire(&p->lock);
+  // firstly check that addr exists in p and it's shared
+  pte_t *pte = walk(p->pagetable, addr, 0);
+  if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_S) == 0) {
+    releases(&p->lock);
+    return -1; // no shared mapping found
+  }
+  uint64 oldsz = PGROUNDUP(p->sz);
+  uint64 npages = size / PGSIZE;
+  uvmunmap(p->pagetable, addr, npages, 0);
+  p->sz = oldsz - npages * PGSIZE;
+  releases(&p->lock);
   return 0;
 }                   
