@@ -95,6 +95,8 @@ void            setkilled(struct proc*);
 struct cpu*     mycpu(void);
 struct cpu*     getmycpu(void);
 struct proc*    myproc();
+struct proc*    find_proc_by_pid(int);
+
 void            procinit(void);
 void            scheduler(void) __attribute__((noreturn));
 void            sched(void);
