@@ -6,7 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 
-// assuming that dst_proc->lock is already acquired
+//assuming that dst_proc->lock is already acquired
 uint64
 map_shared_pages(struct proc* src_proc,
                  struct proc* dst_proc,
@@ -19,7 +19,7 @@ map_shared_pages(struct proc* src_proc,
   pte_t *pte = walk(src_proc->pagetable, src_va, 0);
   if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0) {
     release(&src_proc->lock);
-    return 0; // no valid mapping found
+    return -1; // no valid mapping found
   }
   release(&src_proc->lock);
   
@@ -30,9 +30,9 @@ map_shared_pages(struct proc* src_proc,
   // iterate for PGSIZE to map the size in PA, to pagetable of dst, like in uvmalloc
   for(uint64 a = oldsz; a < oldsz + size; a += PGSIZE) {
     if(mappages(dst_proc->pagetable, a, PGSIZE, pa, perm_bits) != 0) {
-      //unmap_shared_pages(dst_proc, oldsz, a - oldsz); // unmap the pages we already mapped
+      unmap_shared_pages(dst_proc, oldsz, a - oldsz); // unmap the pages we already mapped
       release(&dst_proc->lock);
-      return 0;
+      return -1;
     }
     pa += PGSIZE;
   }

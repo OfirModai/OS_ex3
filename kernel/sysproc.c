@@ -5,7 +5,6 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
-#include "vm.c"
 
 uint64
 sys_exit(void)
@@ -89,22 +88,4 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
-}
-
-uint64
-sys_map_shared_pages(void)
-{
-  int dst_pid;
-  uint64 src_va, size;
-
-  argint(0, &dst_pid);
-  argaddr(1, &src_va);
-  argaddr(2, &size);
-  
-  struct proc *src = myproc();
-  struct proc *dst = find_proc_by_pid(dst_pid); 
-  if (dst == 0)
-        return -1;
-  
-  return map_shared_pages(src, dst, src_va, size);
 }
