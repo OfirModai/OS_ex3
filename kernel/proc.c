@@ -94,10 +94,21 @@ find_proc_by_pid(int pid)
 {
     struct proc *p;
     for (p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
         if (p->state != UNUSED && p->pid == pid)
             return p;
+        release(&p->lock);
     }
     return 0;
+}
+
+uint64
+myproc_size()
+{
+  struct proc *p = myproc();
+  if (p == 0)
+    return 0;
+  return p->sz;
 }
 
 int

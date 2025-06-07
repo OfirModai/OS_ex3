@@ -12,11 +12,13 @@ map_shared_pages(struct proc* src_proc,
                  struct proc* dst_proc,
                  uint64 src_va, uint64 size) 
 {
+  printf("1");
   // lock for axcessing pagetable
   acquire(&src_proc->lock);
   
   // finding the pte of src_va in src_proc
   pte_t *pte = walk(src_proc->pagetable, src_va, 0);
+  printf("2");
   if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0) {
     release(&src_proc->lock);
     return -1; // no valid mapping found
@@ -36,6 +38,7 @@ map_shared_pages(struct proc* src_proc,
     }
     pa += PGSIZE;
   }
+  printf("3");
   dst_proc->sz = oldsz + size;
   release(&dst_proc->lock);
   return oldsz; //I think we need to return the va where the shared memory is starting, but I am not sure
