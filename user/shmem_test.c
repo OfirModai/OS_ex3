@@ -9,8 +9,8 @@
 #define GET_SIZE sbrk(0)
 
 struct shared_data {
-    int turn;
-    char message[MSG_SIZE];
+    volatile int turn;
+    volatile char message[MSG_SIZE];
 };
 
 int main(void)
@@ -32,8 +32,8 @@ int main(void)
 
     if (child_pid == 0) {
         // Child process
-        sleep(2); // Ensure parent has time to set up shared memory
         printf("Child process started with size: %p\n", GET_SIZE);
+        sleep(2); // Ensure parent has time to set up shared memory
         void* va = GET_SIZE - SHARED_REGION_SIZE; // get the address of the shared memory
         printf("va: %p\n", va);
         // print value in *va
@@ -48,7 +48,7 @@ int main(void)
         printf("Child process size after shared mapping: %p\n", GET_SIZE);
 
         // Write message into shared memory
-        strcpy(shared_child->message, MESSAGE);
+        strcpy((char *)shared_child->message, MESSAGE);
         shared_child->turn = 0; // notify parent
 
         // Wait for parent to finish reading
@@ -73,19 +73,20 @@ int main(void)
         // Parent process
         // Map shared_buf into child's address space
         sleep(1); // Ensure child has time to set up shared memory
-        if (map_shared_pages(child_pid, shared_buf, SHARED_REGION_SIZE) < 0) {
+        uint64 va;
+        if ((va = map_shared_pages(child_pid, shared_buf, SHARED_REGION_SIZE)) < 0) {
             printf("Mapping failed\n");
             free(shared_buf);
             return -1;
         }
+        printf("Parent: map returned: %p\n", va);
         shared_buf->turn = 1;
-        // printf("Parent process started with size: %p\n", GET_SIZE);
         // Let child continue
 
         // Wait for child to write message
         while (shared_buf->turn == 1) {
             sleep(10);
-            printf("Parent waiting for child to write message...\n");
+            printf("turn: %d\n", shared_buf->turn);
         }
 
         printf("Parent read: %s\n", shared_buf->message);
