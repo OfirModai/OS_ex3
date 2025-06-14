@@ -187,7 +187,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not a leaf");
     
     // adding PTE_S to the PTE means that the page is not owned by the process, so we don't free it.
-    if(do_free && (*pte & PTE_S) == 0){
+    if(do_free && (*pte & PTE_S) == 0) {
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
     }

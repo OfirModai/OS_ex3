@@ -22,12 +22,11 @@ void child_program(int disable_unmap, int parent_pid, void* parent_va) {
         printf("Child Process: map_shared_pages failed\n");
         exit(1);
     }
+    printf("Child Process: size after mapping is %p\n", GET_SIZE);
 
     // Write to shared memory
     strcpy((char*)child_va, MSG);
-
     printf("Child Process: wrote %s to the shared memory\n", (char*)child_va);
-    printf("Child Process: size after mapping is %p\n", GET_SIZE);
 
     // if the disable_unmap flag is set, skip unmapping
     if (!disable_unmap) 
@@ -84,6 +83,7 @@ void parent_program(void* parent_va)
 
 void test_shared_memory(int disable_unmap) 
 {
+    printf("Parent Process: size before malloc is %p\n", GET_SIZE);
     int parent_pid = getpid();
     void* parent_va = malloc(SHMEM_SIZE);
 
