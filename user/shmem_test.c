@@ -47,7 +47,7 @@ void child_program(int disable_unmap, int parent_pid, void* parent_va) {
 
     // Test heap after unmapping 
     // to show that we can allocate memory properly in the child process after unmapping shared memory
-    void* test_malloc = malloc(SHMEM_SIZE);
+    void* test_malloc = malloc(SHMEM_SIZE * 1000);
     printf("Child Process: testing malloc after unmapping shared memory\n");
 
     if (test_malloc) 

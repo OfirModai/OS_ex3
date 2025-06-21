@@ -451,26 +451,15 @@ map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, ui
   uint64 dst_start = PGROUNDUP(dst_proc->sz);
   uint64 dst_va = dst_start;
 
-  // Lock both processes to access their fields safely
-  // Always acquire locks in consistent order to avoid deadlock
-  struct proc *first, *second;
-  if(src_proc < dst_proc) 
-  {
-    first = src_proc;
-    second = dst_proc;
-  } 
-  else 
+  // keep order to avoid deadlock
+  struct proc *first = src_proc, *second = dst_proc;
+  if (src_proc > dst_proc)
   {
     first = dst_proc;
     second = src_proc;
   }
-
   acquire(&first->lock);
-
-  if(first != second) 
-  {
-    acquire(&second->lock);
-  }
+  acquire(&second->lock);
 
 
   for (uint64 addr = src_start; addr < src_end; addr += PGSIZE) 
@@ -478,11 +467,7 @@ map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, ui
     pte_t* src_pte = walk(src_proc->pagetable, addr, 0);
     if (src_pte == 0 || (*src_pte & PTE_V) == 0 || (*src_pte & PTE_U) == 0) 
     {
-      // Release locks before returning
-      if(first != second) 
-      {
-        release(&second->lock);
-      }
+      release(&second->lock);
       release(&first->lock);
       return -1;
     }
@@ -492,10 +477,7 @@ map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, ui
 
     if (mappages(dst_proc->pagetable, dst_va, PGSIZE, src_pa, src_flags) != 0) 
     {
-      // Release locks before returning
-      if(first != second) {
-        release(&second->lock);
-      }
+      release(&second->lock);
       release(&first->lock);
       return -1;
     }
@@ -507,11 +489,7 @@ map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, ui
 
   uint64 offset = src_va - src_start;
 
-  // Release locks before returning
-  if(first != second) 
-  {
-    release(&second->lock);
-  }
+  release(&second->lock);
   release(&first->lock);
   return dst_start + offset;
 }
@@ -534,10 +512,15 @@ unmap_shared_pages(struct proc* p, uint64 addr, uint64 size)
     }
   }
 
-  uint64 oldsz = PGROUNDUP(p->sz);
   uint64 npages = (end - start) / PGSIZE;
   uvmunmap(p->pagetable, start, npages, 1);
-  p->sz = oldsz - (npages * PGSIZE);
+
+  // update the process size only if needed
+  if (end == p->sz)
+  {
+      p->sz = start;
+  }
+
   release(&p->lock);
   return 0;
 }
