@@ -80,92 +80,72 @@ void child_process(int child_idx, void *parent_va)
     pos = my_strcat(msg, ": hello ");
     pos = my_strcpy(msg + pos, stars);
 
-    uint64 buf = map_shared_pages((uint64) parent_va, SHMEM_SIZE);   
+    void* buf = (void*)map_shared_pages((uint64) parent_va, SHMEM_SIZE);   
 
-    if (buf == (uint64)-1)
-    {
-        printf("Child Process %d: map_shared_pages failed\n", child_idx);
-        exit(1);
-    }
-
-    uint64 va = buf + 4; // save 4 bytes for finished child counter
+    char* va = (char*)buf + 4; // save 4 bytes for finished child counter
     uint16 message_length = strlen(msg) + 1; // +1 for null terminator
     uint64 slot_size = message_length + 4; // 4 bytes for the header 
 
     // ensuring current position with added value don't overflow
-    while(va + slot_size < buf + SHMEM_SIZE)
+    while((uint64)va + slot_size < (uint64)buf + SHMEM_SIZE)
     {
-        va = (va + 3) & ~3; // Align to 4 bytes
-        
-        uint32 header = ((uint32)child_idx << 16) | message_length;
+        uint32* header =  (uint32*)va; // Initialize header with the current position
+        uint32 haeder_data = (child_idx << 16) | message_length; // child_id in upper 16 bits, message_length in lower 16 bits
 
-        if (__sync_val_compare_and_swap((uint32 *)va, 0, header) == 0)
+        if (__sync_val_compare_and_swap(header, 0, haeder_data) == 0)
         {
-            memcpy((char *)va + 4, msg, message_length);
-            break;
+            memcpy(va + 4, msg, message_length);
+
+            __sync_or_and_fetch(header, (1 << 31)); // Set the valid bit in the header
+        
+            sleep(1); // give cpu to other processes
         }
 
-        uint16 curr_msg_len = *(uint32 *)va & 0xFFFF; 
+        uint16 curr_msg_len = (*header) & 0xFFFF; 
         va += 4 + curr_msg_len; // Move to the next slot
+        va = (char*)(((uint64)va + 3) & ~3); // Align to 4 bytes
     }
 
-    __sync_fetch_and_add((uint32 *)buf, 1); // Increment the finished child counter
+    __sync_fetch_and_add((uint32 *)buf, 1); // Increment the finished children counter
     exit(0);
 }
 
 void parent_process(void *buf, int num_children)
 {
-    char *num_read = malloc(num_children);
-    if (!num_read) {
-        printf("malloc failed\n");
-        exit(1);
-    }
-    memset(num_read, 0, num_children);
     uint32* finished_children = (uint32*) buf; // Pointer to the finished child counter
-    char *addr = (char *)buf + 4; // Start reading messages after the finished child counter
     uint64 end = (uint64)buf + SHMEM_SIZE;
 
     while (true)
     {
-        char* cur = addr;
+        char* addr = (char*)buf + 4; // Start reading from the first message slot
 
-        while ((uint64)cur + 4 <= end)  // Must have space for at least header
+        while ((uint64)addr + 4 < end)  // Must have space for at least header
         {
-            cur = (char*)(((uint64)cur + 3) & ~3); // Align to 4 bytes
-            if ((uint64)cur + 4 > end)
-            {
-                break;
-            }
-            uint32 header = *(uint32*)cur;
+            uint32 header = *(uint32*)addr;
 
-            if (header == 0)
+            if((header >> 31) != 1)
             {
-                cur += 4; // Skip empty slots
+                addr += 4; // Skip empty slots
+                addr = (char*)(((uint64)addr + 3) & ~3); // Align to 4 bytes
                 continue;
             }
+           
+            uint16 child_id = (header >> 16) & 0x7FFF; // Extract child ID from the header
+            uint32 msg_len = header & 0xFFFF; // Extract message length from the header
 
-            uint16 child_id = header >> 16;
-            uint16 len = header & 0xFFFF;
-
-            if ((uint64)cur + 4 + len > end)
-            {
-                printf("Parent Process: out of bounds\n");
-                exit(1);
-            }
-
-            if (child_id >= 1 && child_id <= num_children && !num_read[child_id - 1])
+            //if (child_id >= 1 && child_id <= num_children && !num_read[child_id - 1])
+            if (child_id >= 1 && child_id <= num_children) 
             {
                 char msg[MAX_MESSAGE_LENGTH + 1] = {0};
-                memcpy(msg, cur + 4, len < MAX_MESSAGE_LENGTH ? len : MAX_MESSAGE_LENGTH);
-                msg[len < MAX_MESSAGE_LENGTH ? len : MAX_MESSAGE_LENGTH] = '\0';
+                memcpy(msg, addr + 4, msg_len < MAX_MESSAGE_LENGTH ? msg_len : MAX_MESSAGE_LENGTH);
+                msg[msg_len] = '\0'; // Null-terminate the message
 
                 printf("Parent Process: Child Process %d wrote %s\n", child_id, msg);
 
-                num_read[child_id - 1] = 1;
-
-                cur += 4 + len; // Move to the next message slot
-
+                *(uint32*) addr &= ~(1 << 31); // Clear the valid bit in the header
             }
+            addr += 4 + msg_len; // Move to the next message slot
+            addr = (char*)(((uint64)addr + 3) & ~3);
         }
 
         if (*finished_children >= num_children)
@@ -182,6 +162,8 @@ void parent_process(void *buf, int num_children)
 int main(int argc, char *argv[])
 {
     void *parent_va = malloc(SHMEM_SIZE);
+    memset(parent_va, 0, SHMEM_SIZE); // Initialize shared memory to zero
+
     int num_children = NUM_CHILDREN; // Default number of child processes
 
     if (argc > 1)
